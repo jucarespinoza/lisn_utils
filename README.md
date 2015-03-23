@@ -35,19 +35,19 @@ OK. Here's some exmaples showing how to read and parse rinex, tec and scintillat
 Example 1: Parse a rinex file, calculate TEC (total electron content) and plot equivalent TEC vs Time.
 ```
 >>> from lisn_utils import RNXData
->>> rnx = RNXData('path/to/file/rinex_filename')
+>>> rnx = RNXData('path/to/rinex_filename')
 >>> rnx.calctec()
 >>> rxn.plot('epoch', 'eqTEC')
 ```
 Example 2: Parse a TEC file and plot Slant TEC vs Time.
 ```
 >>> from lisn_utils import TECData
->>> tec = TECData('path/to/file/tec_filename')
+>>> tec = TECData('path/to/tec_filename')
 >>> tec.plot('epoch', 'sTEC')
 ```
 Example 3: Parse a Scintillation file and plot S4 index vs Time.
 ```
 >>> from lisn_utils import S4Data
->>> s4 = S4Data('path/to/file/s4_filename')
+>>> s4 = S4Data('path/to/s4_filename')
 >>> s4.plot('epoch', 's4')
 ```
