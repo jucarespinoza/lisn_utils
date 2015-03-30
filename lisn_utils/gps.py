@@ -951,8 +951,8 @@ def fix_jumps(Y, X, vmax, j=None, id=None):
                 ynew  = psum/i
                 ydiff = ynew - Y[i]
             #if id:
-                #print 'Jump found: id=%s, x=%.2f, y1=%.3f, y0=%.3f, diff =%.3f, ydiff =%.3f'% \
-                #    (id, X[i], Y[i], Y[i-1], diff, ydiff)
+            #    print 'Jump found: id=%s, x=%.2f, y1=%.3f, y0=%.3f, diff =%.3f, ydiff =%.3f'% \
+            #        (id, X[i], Y[i], Y[i-1], diff, ydiff)
             for k in range(i,len(Y)):
                 Y[k] += ydiff
     return Y
@@ -3021,12 +3021,15 @@ class RNXData(Data):
             if slip:
                 self.breakphase(prn)
                 continue
-
-            if delta>1800:
+            
+            bad = self.rec.badness(prn)
+            if bad:
+                self.endphase(prn)
+                continue
+            
+            if delta>480:
                 self.breakphase(prn)
                 continue
-
-            bad = self.rec.badness(prn)
 
             if not bad and prn not in self.arcs:
                 self.arcs[prn] = [[len(self.data)-1, None]]
@@ -3034,11 +3037,10 @@ class RNXData(Data):
             if not bad and self.arcs[prn][-1][1] is not None:
                 self.arcs[prn] += [[len(self.data)-1, None]]
                 continue
-            if prn not in self.arcs or self.arcs[prn][-1][1] is not \
-                    None:
-                continue
-            if bad:
-                self.endphase(prn)
+            #if prn not in self.arcs or self.arcs[prn][-1][1] is not \
+            #        None:
+            #    continue
+            
 
     def timesetup(self, filename=None):
         '''
@@ -3259,10 +3261,8 @@ class RNXData(Data):
         for prn in nprns:
             del self.arcs[prn]
 
-        for prn in self.arcs.keys():
+        for prn in self.arcs:
             for x in self.get_index(prn):
-                #if prn not in self[x]: continue                
-                if self[x].badness(prn): continue
                 [xazi, xele, xlat, xlon] = elem.find(prn, self[x].epoch.hours)
                 self[x][prn]['ele'] = xele
                 self[x][prn]['azi'] = xazi
@@ -3285,9 +3285,10 @@ class RNXData(Data):
                 for arc in arclist:
                     rtec = [self[x][prn]['rTEC'] for x in range(arc[0],arc[1]+1)]
                     times = [self[x].epoch.doys for x in range(arc[0],arc[1]+1)]
+                    rtec_index = [x for x in range(arc[0],arc[1]+1)]
                     new_rtec = fix_jumps(rtec, times, 1.173, id=prn)
-                    for x in range(len(new_rtec)):
-                        self[x+arc[0]][prn]['rTEC'] = new_rtec[x]
+                    for x, val in zip(rtec_index, new_rtec):
+                        self[x][prn]['rTEC'] = val
         if level>=3:
             if self.verbose: print 'Processing data...'
             sat_bias = SatBias(self.date, self.obscodes(0), os.path.join(path, 'biases'))
@@ -3295,9 +3296,9 @@ class RNXData(Data):
                 for arc in self.arcs[prn]:
                     suma = [(self[x][prn]['aTEC'] - \
                              self[x][prn]['rTEC'])*sin(self[x][prn]['ele']*deg2rad) \
-                                for x in range(arc[0],arc[1]+1) if not self[x].badness(prn)]
+                                for x in range(arc[0],arc[1]+1)]
                     xcount = [sin(self[x][prn]['ele']*deg2rad) \
-                              for x in range(arc[0],arc[1]+1)  if not self[x].badness(prn)]
+                              for x in range(arc[0],arc[1]+1)]
                     avediff = sum(suma)/sum(xcount)
                     
                     for x in range(arc[0],arc[1]+1):
@@ -3331,7 +3332,7 @@ class RNXData(Data):
                         self.calctec2(self.arcs.keys(), sat_bias, self.rec_bias)
             else:
                 if self.verbose: print 'Calculating RX bias'
-                self.rec_bias = self.rx_bias(sat_bias)
+                self.rec_bias = self.calc_rec_bias(sat_bias)
                 
                 if bias_list:
                     dt_list = [dt for dt in bias_list]
@@ -3369,14 +3370,12 @@ class RNXData(Data):
                     [fbias.write('%d %02d %02d, %.1f\n' % (dt.year,
                         dt.month, dt.day, bias_list[dt])) for dt in dt_list]
                     fbias.close()
-            #self.correct_sat_bias('G32')
 
     def correct_points(self, prn, x):
         '''
         Correct points too distant
         '''
-        if prn not in self[x-1] or prn not in self[x] or prn not in self[x+1]:
-            return
+
         if abs(self[x][prn]['rTEC']-self[x-1][prn]['rTEC'])>1.173:
             if abs(self[x+1][prn]['rTEC']-self[x-1][prn]['rTEC'])<1.173:
                 self[x][prn]['rTEC'] = 0.5*(self[x+1][prn]['rTEC'] + \
@@ -3460,31 +3459,7 @@ class RNXData(Data):
                     for y in range(x, arc[1]):
                         self[y][prn]['rTEC'] = self[y][prn]['rTEC'] - xadd
 
-    def ave_sdev(self, prn, obs='eqTEC'):
-        '''
-        '''
-        arcs = self.arcs[prn]
-        for arc in arcs:
-            idx_list = range(arc[0],arc[1]+1)
-            '''
-            prn_list0 = set([self[x].keys()[y] for x in idx_list for y in \
-                            range(len(self[x].keys()))])
-            print prn_list0
-            prn_list = []
-            for nprn in prn_list0:
-                bad = [self[x].badness(nprn) for x in idx_list]
-                if True in bad: continue
-                prn_list += [nprn]
-            print prn_list
-            '''
-
-            eqtec_list = [self[x][nprn][obs] for x in idx_list for nprn \
-                          in self[x].keys() if nprn<>prn and obs in self[x][nprn]]
-            stat_all = Stats(eqtec_list)
-            stat = Stats([self[x][prn][obs] for x in idx_list])
-        return
-
-    def rx_bias(self, sat_bias):
+    def calc_rec_bias(self, sat_bias):
         '''
         Receiver Bias estimation, using mnbrak and brent methods,
         minimizing sum[var('eqTEC')] betwen 03:00 and 06:00 LT.
@@ -3510,7 +3485,6 @@ class RNXData(Data):
                 if True in bad or prn in self.bad_prn or prn not in self.arcs:
                     continue
                 prn_list += [prn]
-            #print prn_list
             #find a range where there is a minimun
             val, fval = mnbrak(100, 50, self.fvarsum,
                                    (idx_list, prn_list, sat_bias))
@@ -3630,21 +3604,8 @@ class RNXData(Data):
         Also calculate equivalent TEC using satellite bias and receiver bias
         corrections.
         '''
-
+        
         for prn in prns:
-            '''
-            suma = self.get_array(prn, 'aTEC')-self.get_array(prn, 'rTEC')*np.sin(self.get_array(prn, 'ele')*deg2rad)
-            xcount = np.sin(self.get_array(prn, 'ele')*deg2rad)
-            avediff = np.sum(suma)/np.sum(xcount)
-            for rec in self:
-                if prn in rec and 'rTEC' in rec[prn]:
-                    rec[prn]['TEC']=rec[prn]['rTEC']+avediff
-                    rec[prn]['sTEC']=rec[prn]['TEC']-sat_bias[prn]-rec_bias
-                    sf = 1.0/cos(asin(0.94092*cos(rec[prn]['ele']*deg2rad)))
-                    rec[prn]['eqTEC']=rec[prn]['sTEC']/sf
-            
-            
-            '''
             for arc in self.arcs[prn]:
                 for x in range(arc[0],arc[1]+1):
                     self[x][prn]['sTEC'] = self[x][prn]['TEC'] - \
@@ -3663,7 +3624,6 @@ class RNXData(Data):
             for prn in self.arcs.keys():
                 if prn in self.bad_prn: continue
                 try:
-                    #min_tec = min([self[x][prn]['eqTEC'] for x in self.get_index(prn) if self[x][prn]['ele']>15])
                     min_tec = self.get_min('eqTEC', prns=(prn,))
                     if min_tec<0: prnszero.add(prn)
                 except ValueError:
