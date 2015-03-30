@@ -3261,7 +3261,8 @@ class RNXData(Data):
 
         for prn in self.arcs.keys():
             for x in self.get_index(prn):
-                if prn not in self[x]: continue
+                #if prn not in self[x]: continue                
+                if self[x].badness(prn): continue
                 [xazi, xele, xlat, xlon] = elem.find(prn, self[x].epoch.hours)
                 self[x][prn]['ele'] = xele
                 self[x][prn]['azi'] = xazi
@@ -3289,14 +3290,19 @@ class RNXData(Data):
                         self[x+arc[0]][prn]['rTEC'] = new_rtec[x]
         if level>=3:
             if self.verbose: print 'Processing data...'
-            sat_bias = SatBias(self.date, self.obscodes(0), os.path.join(path,
-                                                                    'biases'))
-            #for bprn in bad_prn:
-            #    delta = self.correct_sat_bias(bprn)
-            #    if delta: sat_bias[bprn] += delta
-            #sat_bias['G32'] += 10
-            #sat_bias['G22'] -= 7
-            self.calctec2(self.prns, sat_bias, 0)#, True)
+            sat_bias = SatBias(self.date, self.obscodes(0), os.path.join(path, 'biases'))
+            for prn in self.arcs:
+                for arc in self.arcs[prn]:
+                    suma = [(self[x][prn]['aTEC'] - \
+                             self[x][prn]['rTEC'])*sin(self[x][prn]['ele']*deg2rad) \
+                                for x in range(arc[0],arc[1]+1) if not self[x].badness(prn)]
+                    xcount = [sin(self[x][prn]['ele']*deg2rad) \
+                              for x in range(arc[0],arc[1]+1)  if not self[x].badness(prn)]
+                    avediff = sum(suma)/sum(xcount)
+                    
+                    for x in range(arc[0],arc[1]+1):
+                        self[x][prn]['TEC'] = self[x][prn]['rTEC'] + avediff
+            self.calctec2(self.arcs.keys(), sat_bias, 0)
             for prn, arclist in self.arcs.items():
                 for arc in arclist:
                     self.correct_slips(prn, arc)
@@ -3314,7 +3320,7 @@ class RNXData(Data):
             if rec_bias:
                 if self.verbose: print 'Calculating eqTEC using RX bias =', rec_bias
                 self.rec_bias = rec_bias
-                self.calctec2(self.prns, sat_bias, self.rec_bias)
+                self.calctec2(self.arcs.keys(), sat_bias, self.rec_bias)
                 if level>=5:
                     if self.verbose: print 'Leveling bias for negative TEC'
                     self.zerolevel(sat_bias, iterations=iterations)
@@ -3322,7 +3328,7 @@ class RNXData(Data):
                         if self.verbose: 
                             print 'zero leveling bias difference to high using=%s' % rec_bias
                         self.rec_bias = rec_bias
-                        self.calctec2(self.prns, sat_bias, self.rec_bias)
+                        self.calctec2(self.arcs.keys(), sat_bias, self.rec_bias)
             else:
                 if self.verbose: print 'Calculating RX bias'
                 self.rec_bias = self.rx_bias(sat_bias)
@@ -3349,7 +3355,7 @@ class RNXData(Data):
                     leveling = False
                 elif not self.rec_bias and not old_rec_bias:
                     raise RuntimeError('RX bias can not be estimated')
-                self.calctec2(self.prns, sat_bias, self.rec_bias)
+                self.calctec2(self.arcs.keys(), sat_bias, self.rec_bias)
                 if level>=5 and leveling:
                     self.zerolevel(sat_bias, iterations=iterations)
                     #if old_rec_bias and abs(old_rec_bias-self.rec_bias)>8:
@@ -3614,7 +3620,6 @@ class RNXData(Data):
                 sd += Stats(eqTEC_list).std_dev
         return sd
 
-
     def calctec2(self, prns, sat_bias, rec_bias):
         '''
         TEC from carrier phase (rTEC) is smooth but ambiguous.
@@ -3625,7 +3630,7 @@ class RNXData(Data):
         Also calculate equivalent TEC using satellite bias and receiver bias
         corrections.
         '''
-        prns = [prn for prn in prns if prn in self.arcs]
+
         for prn in prns:
             '''
             suma = self.get_array(prn, 'aTEC')-self.get_array(prn, 'rTEC')*np.sin(self.get_array(prn, 'ele')*deg2rad)
@@ -3641,19 +3646,12 @@ class RNXData(Data):
             
             '''
             for arc in self.arcs[prn]:
-                suma = [(self[x][prn]['aTEC'] - \
-                         self[x][prn]['rTEC'])*sin(self[x][prn]['ele']*deg2rad) \
-                            for x in range(arc[0],arc[1]+1)]
-                xcount = [sin(self[x][prn]['ele']*deg2rad) \
-                          for x in range(arc[0],arc[1]+1)]
-                avediff = sum(suma)/sum(xcount)
                 for x in range(arc[0],arc[1]+1):
-                    self[x][prn]['TEC'] = self[x][prn]['rTEC'] + avediff
                     self[x][prn]['sTEC'] = self[x][prn]['TEC'] - \
                                                 sat_bias[prn]-rec_bias
                     sf = 1.0/cos(asin(0.94092*cos(self[x][prn]['ele']*deg2rad)))
                     self[x][prn]['eqTEC'] = self[x][prn]['sTEC']/sf
-            
+
     def zerolevel(self, sat_bias, iterations=20):
         '''
         Correct receiver bias by leveling zero TEC values.
@@ -3675,21 +3673,21 @@ class RNXData(Data):
                     print 'Max iteration reach'
                     break
                 self.rec_bias += 1
-                self.calctec2(self.prns, sat_bias, self.rec_bias)
+                self.calctec2(self.arcs.keys(), sat_bias, self.rec_bias)
                 cnt_zero = 0
                 cnt_high += 2
             elif len(prnszero)==0:
                 break
             elif len(prnszero)>10:
                 self.rec_bias -= 5
-                self.calctec2(self.prns, sat_bias, self.rec_bias)
+                self.calctec2(self.arcs.keys(), sat_bias, self.rec_bias)
                 cnt_zero = 0
             elif cnt_zero > 6:
                 break
             else:
                 self.rec_bias -= 1
                 cnt_zero += 1
-                self.calctec2(self.prns, sat_bias, self.rec_bias)
+                self.calctec2(self.arcs.keys(), sat_bias, self.rec_bias)
 
     def vtec(self, max_ele=25):
         '''
@@ -4001,7 +3999,7 @@ class RNXRecord(dict):
             return True
         elif 'C2' not in self[prn] and 'P2' not in self[prn]:
             return True
-        elif abs(self.ctec(prn)) > 990 or abs(self.ptec(prn)) >99999990:
+        elif abs(self.ctec(prn))>990 or abs(self.ptec(prn))>99999990:
             return True
         elif self[prn]['L2']==0 or self[prn]['P2']==0:
             return True
