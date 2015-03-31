@@ -374,6 +374,78 @@ def plot_s4_map(S4, date, delta=30, figname=None, scale=(0, 1),
                 axm.scatter(x, y, c=cm, cmap=fig.cmap, norm=norm, s=20, edgecolor='none')
     
     fig.show(watermark=False)
+
+def plot_tec_map(TEC, date, ptype, delta=60, figname=None, scale=(0, 80), 
+                prns=None, bad_prns=None, min_ele=30):
+    '''
+    '''
+    dt1 = date
+    dt2 = date+delta*60
+    ###create figure
+    fig,axm,axc = plot_map('Total Electron Content (TEC)', figsize=(7,6), 
+                           lat_limit=(-60,40), lon_limit=(-120,-30),
+                           figname=figname, deltaH=20)
+    norm = fig.mpl.colors.Normalize(*scale)
+    ###colorbar    
+    cb = fig.mpl.colorbar.ColorbarBase(axc, cmap=fig.cmap, norm=norm, orientation='vertical')
+    cb.set_label('TECU', size=10)
+    cb.set_ticks(range(0, scale[1]+1, 10))
+    ###subtitle
+    axm.set_title('%s%30s%s - %s (UT)' % (date.strftime('%Y/%m/%d'), ' ', 
+                                          dt1.strftime('%H:%M'), 
+                                          dt2.strftime('%H:%M')), 
+                   size=11)
+    
+    if ptype=='measured':    
+        for data in TEC:
+            for prn in data.arcs:            
+                x,y,c = data.get_array(prn, ('lon', 'lat', 'eqTEC'), dt1, dt2, ('ele', min_ele))
+                axm.scatter(x, y, c=c, cmap=fig.cmap, norm=norm, s=5, edgecolor='none')
+    else:
+        lat = 60        
+        lon = 120        
+        mTEC = np.zeros((90,100))
+        iTEC = np.zeros((90,100))
+        iMAX = np.ones((90,100))*-99
+        #mTEC = np.ma.masked_where((mTEC==0), mTEC)
+        for data in TEC:
+            for prn in data.arcs:
+                for rec in data.get_records(prn, dt1, dt2):
+                    if rec[prn]['ele']<min_ele:
+                        continue
+                    x=int(rec[prn]['lon']+lon+0.5)
+                    y=int(rec[prn]['lat']+lat+0.5)
+                    mTEC[x,y] = mTEC[x,y]+rec[prn]['eqTEC']
+                    iTEC[x,y] = iTEC[x,y]+1
+                    if rec[prn]['eqTEC']>iMAX[x,y]: iMAX[x,y] = rec[prn]['eqTEC']
+        
+        mTEC = np.ma.masked_where((iTEC==0), mTEC)
+        Z = mTEC/iTEC
+        
+        x = np.arange(-5, 7, 1)
+        y = np.arange(5, -7, -1)
+        
+        x, y = np.meshgrid(x, y)
+        
+        z = Z[70:82,40:52]
+        ave = np.nanmean(z)
+        std = np.nanstd(z)
+        
+        p = [z, z*x, z*y, z*x**2, z*x*y, z*y**2, z*x**3, z*y*x**2, z*x*y**2, z*y**3]
+        p = [np.nansum(a) for a in p]
+        print p
+        print ave
+        print std
+        
+                
+        #P = (1+x+y+x**2+y**2+x*y+x**2*y+x*y**2+x**3+y**3)*t        
+        
+        X = np.arange(-lon, -29)
+        Y = np.arange(-lat, 41)        
+        X, Y = np.meshgrid(X, Y)        
+        axm.pcolor(X, Y, Z.T, cmap=fig.cmap, norm=norm)
+        
+    fig.show(watermark=False)
     
 def plot_data_vars(gdo, X, Y, figname=None, localtime=False, prns=None, min_ele=30, 
                   colormap=None, marks=False, legend=False, s4legend=False, 
