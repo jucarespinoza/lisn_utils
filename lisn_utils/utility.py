@@ -827,7 +827,7 @@ class Config(object):
     '''
     Read configuration file
     '''
-    def __init__(self, filename):
+    def __init__(self, filename=None):
         if filename is None:
             filename = '/etc/lisn.conf'
         if not os.path.exists(filename):
