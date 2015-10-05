@@ -1,5 +1,9 @@
 '''
 Concatenation and decimation of GPS binary files
+Suported formats:
+ - Novatel
+ - Leica
+ - Ashtech
 
 @author: Juan C. Espinoza
 @contact: jucar.espinoza@gmail.com
@@ -235,6 +239,21 @@ def SILL(EL,AZ,XH,XTLON,XTLAT):
     SILAT = rad2deg*SILAT
     SILON = rad2deg*SILON
     return SILAT,SILON,RANGE
+
+def GTODDBL(XLAT, XLON, SLAT, SLON, XALT=200.0):
+    '''
+    '''
+    
+    STLAT = SLAT*deg2rad
+    RE = 6378.39*(.99832 + .00168*cos(2.*STLAT))
+    C = abs(SLON - XLON)
+    AS = deg2rad*(90.0 - SLAT)
+    BS = deg2rad*(90.0 - XLAT)
+    COSC  = cos(AS)*cos(BS) + sin(AS)*sin(BS)*cos(C*deg2rad)
+    if COSC >= 0.999999999: COSC = 0.999999999
+    if COSC <= -.999999999: COSC = -0.999999999
+    HDIST = acos(COSC)*(RE + XALT)
+    return abs(HDIST)
 
 def cat_files(file_out, source, run_date=None, interval=10, extension='',
               old_extension='', label='', header='', gz=False, daily=True,
@@ -952,7 +971,7 @@ def fix_jumps(Y, X, vmax, j=None, id=None):
                 ydiff = ynew - Y[i]
             #if id:
             #    print 'Jump found: id=%s, x=%.2f, y1=%.3f, y0=%.3f, diff =%.3f, ydiff =%.3f'% \
-            #        (id, X[i], Y[i], Y[i-1], diff, ydiff)
+            #    (id, X[i], Y[i], Y[i-1], diff, ydiff)
             for k in range(i,len(Y)):
                 Y[k] += ydiff
     return Y
@@ -2884,7 +2903,7 @@ class RNXData(Data):
     TYPE = 'RNX'
     
     def __init__(self, filename, check=True, pcode=None, headeronly=False,
-                 station=False, verbose=True):
+                 station=False, verbose=False):
         self.header = {}
         self.satsystem = None
         self.date = None
@@ -3036,11 +3055,7 @@ class RNXData(Data):
                 continue
             if not bad and self.arcs[prn][-1][1] is not None:
                 self.arcs[prn] += [[len(self.data)-1, None]]
-                continue
-            #if prn not in self.arcs or self.arcs[prn][-1][1] is not \
-            #        None:
-            #    continue
-            
+                continue            
 
     def timesetup(self, filename=None):
         '''
@@ -3170,7 +3185,7 @@ class RNXData(Data):
             self.data = tmp
         del tmp
         print 'Merging old:%d + new:%d -> %d records' % (old_size, len(other), len(self))
-            
+
     def getgaps(self):
         '''
         Return a list of gaps presents
@@ -3531,8 +3546,8 @@ class RNXData(Data):
                     for x in idxs:
                         dist = abs(self[x][qprn]['lat']-self[x][aprn]['lat'])
                         if dist < distmn:
-                            hdist = self.GTODDBL(self[x][qprn]['lat'], self[x][qprn]['lon'],
-                                                 self[x][aprn]['lat'], self[x][aprn]['lon'])
+                            hdist = GTODDBL(self[x][qprn]['lat'], self[x][qprn]['lon'],
+                                            self[x][aprn]['lat'], self[x][aprn]['lon'])
                             distmn = dist
                             idx = x
                     #print qprn, aprn, idx, distmn, hdist
@@ -3563,21 +3578,6 @@ class RNXData(Data):
             return [x for arc in self.arcs[prn] for x in range(arc[0], arc[1]+1)]
         else:
             return []
-
-    def GTODDBL(self, XLAT,XLON,SLAT,SLON):
-        '''
-        '''
-        XALT  = 200.0
-        STLAT = SLAT*deg2rad
-        RE    = 6378.39*(.99832 + .00168*cos(2.*STLAT))
-        C     = abs(SLON - XLON)
-        AS    = deg2rad*(90.0 - SLAT)
-        BS    = deg2rad*(90.0 - XLAT)
-        COSC  = cos(AS)*cos(BS) + sin(AS)*sin(BS)*cos(C*deg2rad)
-        if COSC >= 0.999999999: COSC = 0.999999999
-        if COSC <= -.999999999: COSC = -0.999999999
-        HDIST = acos(COSC)*(RE + XALT)
-        return abs(HDIST)
 
     def fvarsum(self, rec_bias, idx_list, prn_list, sat_bias):
         '''
@@ -3768,8 +3768,9 @@ class RNXData(Data):
         fname = os.path.join(path, fname)
 
         if gz:
-            fd = gzip.open(fname+'.gz', 'wb')
-            print 'Creating TEC file: %s.gz' % fname
+            fname += '.gz'
+            fd = gzip.open(fname, 'wb')
+            print 'Creating TEC file: %s' % fname
         else:
             fd = open(fname, 'w')
             print 'Creating TEC file: %s' % fname
@@ -3786,7 +3787,7 @@ class RNXData(Data):
         else:
             prns = [prn for prn in self.arcs.keys() if prn not in self.bad_prn]
         prns.sort()
-        format = '\n%5d    0%4d%4d%4d' + ''.join(['%9.3f' for x in vars])
+        fmt = '\n%5d    0%4d%4d%4d' + ''.join(['%9.3f' for x in vars])
         for prn in prns:
             nrec = 0
             data = ''
@@ -3803,7 +3804,7 @@ class RNXData(Data):
                         else:
                             values.append(-1)
                     nrec += 1
-                    data += format % ((nrec, self[x].epoch.hour,
+                    data += fmt % ((nrec, self[x].epoch.hour,
                            self[x].epoch.minute, self[x].epoch.second)\
                            +tuple(values))
             prn_line = '\nPRN %7d%7d' % (int(prn[1:]), nrec)
@@ -4360,6 +4361,62 @@ class TECrecord(RNXRecord):
     def __init__(self, epoch, prn, vals):
         self.epoch = epoch
         self[prn] = EpochDict(zip(self.KEYS, [float(x) for x in vals[5:]]))
+
+class BUBData(list):
+    '''
+    '''
+    
+    TYPE = 'BUB'
+        
+    def __init__(self, filename):
+        self.codes = set()
+        self.prns = set()
+        fo = open_file(filename)
+        cnt = 0
+        while True:
+            try:
+                values = fo.values()
+            except StopIteration:
+                break
+            if ':' in values:
+                dt = GPSDateTime(int(values[2]), int(values[3]), int(values[4]))
+            elif 'bubble' in values:
+                continue
+            elif cnt!=int(values[0]):
+                self.append(BUBRecord(dt, values))
+                self.codes.add(self[-1].code)
+                self.prns.add(self[-1].prn)
+                cnt += 1
+            else:
+                self[-1].add(values)
+
+    def __str__(self):
+        '''
+        '''
+        return '%sData[records=%s]' % (self.TYPE, len(self))
+
+class BUBRecord(dict):
+    '''
+    '''
+    
+    def __init__(self, date, values):
+        self.epoch = date + int(values[3])
+        self.prn = 'G%02d' % int(values[2])
+        self.code = values[1]
+        self['seconds'] = [int(values[3])]
+        self['lat'] = [float(values[4])]
+        self['lon'] = [float(values[5])]
+        self['eqTEC'] = [float(values[6])]
+        self['dTEC'] = [float(values[7])]
+        self['bTEC'] = [float(values[8])]
+        
+    def add(self, values):
+        self['seconds'].append(int(values[3]))
+        self['lat'].append(float(values[4]))
+        self['lon'].append(float(values[5]))
+        self['eqTEC'].append(float(values[6]))
+        self['dTEC'].append(float(values[7]))
+        self['bTEC'].append(float(values[8]))
 
 class header(object):
     '''
