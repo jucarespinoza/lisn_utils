@@ -847,11 +847,11 @@ class Config(object):
     url = property(url)
     
     def url_login(self):
-        return os.path.join(self.url, self.all['server']['login'])
+        return os.path.join(self.url, self.all['server']['url_login'])
     url_login = property(url_login)
     
     def url_logout(self):
-        return os.path.join(self.url, self.all['server']['logout'])
+        return os.path.join(self.url, self.all['server']['url_logout'])
     url_logout = property(url_logout)
     
     def mag_server(self, server=None):
