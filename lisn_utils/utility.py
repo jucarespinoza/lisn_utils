@@ -140,6 +140,13 @@ class LISNRequest(object):
             print req.url
         return req.json()
     
+    def update_status(self, code, instrument, **kwargs):
+        url = os.path.join(self.params.url, 'instruments/update', instrument, code)
+        req = self.client.get(url, params=kwargs)
+        if self.debug:
+            print req.url
+        return req.json()
+    
     def update_date(self, code, instrument, datatype, **kwargs):
         url = os.path.join(self.params.url, 'data/update', instrument, code, datatype)
         req = self.client.get(url, params=kwargs)
