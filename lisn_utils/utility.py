@@ -18,6 +18,7 @@ from ftplib import FTP
 
 try:
     import requests
+    requests.adapters.DEFAULT_RETRIES = 5
 except:
     requests = False
 try:
