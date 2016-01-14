@@ -587,7 +587,7 @@ class MyFTP(object):
         if self.secure:
             return self.ftp.stat(path).st_size
         else:
-            return int(ftp.size(path))
+            return int(self.ftp.size(path))
     
     def open(self, filename, mode='rb'):        
         if self.exists(filename):
