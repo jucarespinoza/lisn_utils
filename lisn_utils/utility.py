@@ -539,6 +539,7 @@ class MyFTP(object):
             else:
                 self.ftp = FTP(host)
                 self.ftp.login(username, password)
+                self.ftp.sendcmd('TYPE i')
         except:
             traceback.print_exc(2)
             self.error = True
@@ -581,6 +582,12 @@ class MyFTP(object):
         else:
             return int(time.mktime(time.strptime(str(self.ftp.sendcmd('MDTM '+ path)[-14:]),
                                                  '%Y%m%d%H%M%S')))
+    
+    def size(self, path):
+        if self.secure:
+            return self.ftp.stat(path).st_size
+        else:
+            return int(ftp.size(path))
     
     def open(self, filename, mode='rb'):        
         if self.exists(filename):
