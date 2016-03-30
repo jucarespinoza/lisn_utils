@@ -577,7 +577,7 @@ def lb2_to_rnx(input_file, marker='site', rnx_path=localpath, date=None,
         file_date = GPSDateTime(date)
     else:
         try:
-            file_date = GPSDateTime(file_name.split('.lb2')[0])
+            file_date = GPSDateTime(file_name.split('.lb2')[0], filename=True)
         except:
             print 'Filename does not have a valid date stamp: yymmdd'
             return None, 0
