@@ -95,6 +95,8 @@ class GPSDateTime(object):
                         pattern = "%y%m%d%H%M"
                     elif len(value) == 12:
                         pattern = "%y%m%d%H%M%S"
+                    elif len(value) == 13:
+                        pattern = "%Y%j%H%M%S"
                     elif len(value) == 14:
                         pattern = "%Y%m%d%H%M%S"
                     else:

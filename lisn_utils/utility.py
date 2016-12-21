@@ -10,12 +10,15 @@ These are not very specific in usage, however could be useful anywhere.
 import os, time, math, gzip, json, shutil, glob
 import traceback, fnmatch
 import numpy as np
+import smtplib
+from email.message import Message
 from StringIO import StringIO
 from gpsdatetime import GPSDateTime
 from ftplib import FTP
 
 try:
     import requests
+    requests.adapters.DEFAULT_RETRIES = 5
 except:
     requests = False
 try:
@@ -45,6 +48,45 @@ scinda_vars = {
     'east_r'  : (7, '-', (0, 1.2), 'S4', 'UHF East Antenna Redundant'),
     'drift'   : (14, '.r', (-100, 300), 'Velocity m/s',
                  'Drift for West Channels')}
+
+class Notification(object):
+    '''
+    Class to handle and send email notifications
+    '''
+   
+    def __init__(self, alert=''):
+        self.alert = alert
+        self.params = Config().notification()
+           
+    def send(self, receiver, subject, content=''):
+        '''
+        '''
+
+        message = Message()
+        message['To']      = receiver
+        message['From']    = self.params['from']
+        message['Subject'] = 'LISN %s: %s' % (self.alert, subject)
+        message.set_payload(content)
+
+        try:
+            print 'Sending Mail to: %s' % receiver
+            if self.params['server']=='localhost':
+                smtp = smtplib.SMTP('localhost')
+                smtp.sendmail(self.params['from'], receiver.split(','), message.as_string())
+                smtp.quit()
+            else:
+                smtp = smtplib.SMTP(self.params['server'], self.params['port'])
+                smtp.ehlo()
+                smtp.starttls()
+                smtp.ehlo()
+                smtp.login(self.params['user'], self.params['password'])
+                smtp.sendmail(self.params['from'], receiver.split(','), message.as_string())
+                smtp.quit()                
+            print "Successfully sent email"
+        except Exception as e:
+            print "Error: %s" % e
+            return e
+        return True
 
 class LoginError(Exception):
     pass
@@ -94,6 +136,13 @@ class LISNRequest(object):
     
     def update_station(self, code, instrument, **kwargs):
         url = os.path.join(self.params.url, 'utils/update', instrument, code)
+        req = self.client.get(url, params=kwargs)
+        if self.debug:
+            print req.url
+        return req.json()
+    
+    def update_status(self, code, instrument, **kwargs):
+        url = os.path.join(self.params.url, 'instruments/update', instrument, code)
         req = self.client.get(url, params=kwargs)
         if self.debug:
             print req.url
@@ -445,7 +494,6 @@ class MyXML(object):
                            encoding=encoding, xml_declaration=True)
         return s.replace("'",'"')
 
-
 class MyFTP(object):
     '''
     Class to manage sftp and ftp connections with servers, functions supported:
@@ -539,7 +587,7 @@ class MyFTP(object):
         if self.secure:
             return self.ftp.stat(path).st_size
         else:
-            return int(ftp.size(path))
+            return int(self.ftp.size(path))
     
     def open(self, filename, mode='rb'):        
         if self.exists(filename):
@@ -549,6 +597,7 @@ class MyFTP(object):
                 so = StringIO()
                 so.name = filename
                 self.ftp.retrbinary('RETR '+filename, so.write)
+                so.seek(0)
                 return so
         else:
             print 'File not found in server: %s' % filename
@@ -646,15 +695,18 @@ def path_size(path, name='*', human=False):
     else:
         return (size, cnt)
 
-def human_size(num, fmt='%3.2f'):
+def readable_filesize(size, fmt='%3.2f'):
     '''
-    Return num in human readable format
+    Get size in human readable format
+
+    return (string, factor, unit)
     '''
     f = 1
+    fmt += ' %s'
     for unit in ['b','Kb','Mb','Gb', 'Tb']:
-        if num < 1024.0:
-            return fmt % num +' %s' % unit
-        num /= 1024.0
+        if size<1024.0:
+            return (fmt % (size, unit), f, unit)
+        size /= 1024.0
         f *= 1024.0
 
 class open_file(object):
@@ -727,7 +779,7 @@ class open_file(object):
         '''
         self.fid.seek(self.last_pos)
 
-    def values(self, char = ' ', fmt=None):
+    def values(self, char=' ', fmt=None):
         '''
         Return the line as python list.
         the line is splited by char and formatted as fmt
@@ -741,8 +793,7 @@ class open_file(object):
         elif isinstance(fmt, (list, tuple)):            
             return [f(s) for f,s in zip(fmt, L)]
         else:
-            return L
-                    
+            return L                    
 
     def read(self, n=None):
         self.lineno = None
@@ -791,9 +842,9 @@ class Config(object):
     '''
     Read configuration file
     '''
-    def __init__(self, filename):
+    def __init__(self, filename=None):
         if filename is None:
-            filename = '/etc/lisn.cfg'
+            filename = '/etc/lisn.conf'
         if not os.path.exists(filename):
             raise IOError('Configuration file does not exists')
         self.all = json.load(open(filename))
@@ -811,11 +862,11 @@ class Config(object):
     url = property(url)
     
     def url_login(self):
-        return os.path.join(self.url, self.all['server']['login'])
+        return os.path.join(self.url, self.all['server']['url_login'])
     url_login = property(url_login)
     
     def url_logout(self):
-        return os.path.join(self.url, self.all['server']['logout'])
+        return os.path.join(self.url, self.all['server']['url_logout'])
     url_logout = property(url_logout)
     
     def mag_server(self, server=None):
@@ -836,5 +887,8 @@ class Config(object):
         else:
             return self.all['rinex_server']
     
+    def notification(self):
+        return self.all['notification']
+
 if __name__=='__main__':
     pass

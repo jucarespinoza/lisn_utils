@@ -10,6 +10,7 @@ Concatenation and decimation of magnetometer files
 import gzip
 from utility import open_file
 from gpsdatetime import GPSDateTime
+from plotter import plot_mag
 
 class MAGData(list):
     '''
@@ -17,7 +18,7 @@ class MAGData(list):
     vars =  ('DD', 'MM', 'YYYY', 'hh', 'mm', 'D(deg)', 'H(nT)', 
              'Z(nT)', 'I(deg)', 'F(nT)', 'T1(deg)', 'T2(ºC)')
 
-    def __init__(self, url, station={}, date=None):
+    def __init__(self, url, station={}, date=None, format=None):
         '''
         '''
         self.arcs = []
@@ -27,22 +28,32 @@ class MAGData(list):
         try:              
             print 'Opening: %s' % url
             fo = open_file(url)
-            self.header = fo.next()
+            if format is None:
+                self.header = fo.next()
         except BaseException as e:
             print e
             return
         if 'code' not in station:
             self.station['code'] = fo.name.split('/')[-1][:4]
         while True:
-            try:                
-                values = fo.values(fmt=(int,int,int,int,int,float,float,float,float,float))                
+            try:
+                if format is None:            
+                    values = fo.values(fmt=(int,int,int,int,int,float,float,float,float,float))
+                else:
+                    values = fo.values(char=',', fmt=(int,int,int,int,float,float,float,float,float, float, float))
             except StopIteration:
                 break
             except (ValueError, TypeError):
                 continue
 
-            if not values or len(values)<>10: continue
-            rec = MAGRecord(values)
+            if not values or len(values)not in (10, 11): continue
+            if format is None:
+                try:
+                    rec = MAGRecord(values)
+                except:
+                    continue
+            else:
+                rec = MAGRecordCVS(values)
             if date is not None and date<>rec.epoch.date():
                 continue
             if len(self)>0 and rec.epoch<=self[-1].epoch:
@@ -78,7 +89,7 @@ class MAGData(list):
             return [rec[keys[0]] for rec in self]
         else:
             return [[rec[key] for key in keys]for rec in self]
-        
+    
     def save(self, filename, date=[], gz=True):
         '''
         '''
@@ -107,6 +118,14 @@ class MAGData(list):
             fmt = '%s%9.4f%9.1f%9.1f%9.4f%9.1f%9.2f%9.2f\n'
             values = ('D', 'H', 'Z', 'I', 'F', 'T1', 'T2')
         
+        pos = self.header.find('<')
+        if pos>=0:
+            if date:
+                dt = date[0]
+            else:
+                dt=self[0].epoch
+            self.header = self.header.replace(self.header[pos:pos+5], '<%03d>' % dt.doy)
+        
         fo.write('%s\n\n' % self.header)
         fo.write('%3s%3s%5s%3s%3s%9s%9s%9s%9s%9s%9s%9s\n\n' % self.vars)
         cnt = 0
@@ -120,6 +139,14 @@ class MAGData(list):
         
         print '%s of %s records saved at %s' % (cnt, len(self), filename)
         
+    def get_records(self, dt1, dt2=None):
+        '''
+        '''
+        if dt2 is None:
+            return [rec for rec in self if rec.epoch.date()==dt1.date()]
+        else:
+            return [rec for rec in self if dt1<=rec.epoch<=dt2]
+    
     def merge(self, data_i):
         '''
         Merge current magdata object with another.
@@ -164,6 +191,11 @@ class MAGData(list):
         self.header = data_i.header            
 
         print 'Merging %d + %d -> %d records' % (jmax, imax, len(self))
+        
+    def plot(self, **kwargs):
+        '''
+        '''
+        return plot_mag(self, station=self.station, **kwargs)
     
 class MAGRecord(dict):
     '''
@@ -226,6 +258,25 @@ class MAGRecord(dict):
         Comparison reference to the epoch of the record
         '''
         return self.epoch>=other.epoch
+
+class MAGRecordCVS(MAGRecord):
+    '''
+    '''
+    def __init__(self, values):
+        '''
+        '''  
+        self.epoch = GPSDateTime(values[0],values[1],values[2])+values[3]*60
+        self['D'] = values[6]/100
+        self['H'] = values[5]
+        self['Z'] = values[9]
+        self['I'] = values[8]
+        self['F'] = values[9]
+        try:
+            self['T1'] = values[10]
+            self['T2'] = values[11]
+        except IndexError:
+            pass
+
 
 if __name__=='__main__':
     pass

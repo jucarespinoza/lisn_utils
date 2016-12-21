@@ -41,14 +41,14 @@ else:
 
 data_files = [('/usr/local/bin/', files)]
 
-if os.path.exists('/etc/lisn.cfg'):
-    print '*** Copying old configuration file /etc/lisn.cfg.bk'
-    os.rename('/etc/lisn.cfg', '/etc/lisn.cfg.bk')
-data_files.append(('/etc/', ['lisn_utils/cfg/lisn.cfg']))
+if os.path.exists('/etc/lisn.conf'):
+    print '*** Copying old configuration file /etc/lisn.conf.bk'
+    os.rename('/etc/lisn.conf', '/etc/lisn.conf.bk')
+data_files.append(('/etc/', ['lisn_utils/cfg/lisn.conf']))
 
 setup(
     name='lisn_utils',
-    version='1.0',
+    version='3.0',
     description='Several Utilities for processing LISN data',
     long_description='''
     Utilities for processing Data from the LISN project.

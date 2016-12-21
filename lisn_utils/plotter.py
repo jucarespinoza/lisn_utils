@@ -14,6 +14,7 @@ import numpy as np
 from StringIO import StringIO
 from pkg_resources import resource_string
 import utility as utl
+import gps
 from gpsdatetime import GPSDateTime, timedelta
 from headers import PLOT_LABELS, PLOT_UNITS
 
@@ -83,7 +84,7 @@ class MyFigure(object):
         '''
         '''
         x = kwargs.pop('x', 0.5)
-        y = kwargs.pop('y', 0.98)
+        y = kwargs.pop('y', 1-0.15/self.figure.get_figheight())
         if ('horizontalalignment' not in kwargs) and ('ha' not in kwargs):
             kwargs['horizontalalignment'] = 'center'
 
@@ -119,7 +120,6 @@ class MyFigure(object):
             self.py.close(self.figure)
             print 'figure saved: %s' % self.figname
         else:
-            #PLT.ion()
             PLT.show()
 
     def add_axes(self, shared=False, **kwargs):
@@ -325,14 +325,14 @@ def plot_map(title, magfield=True, colorbar=True, figsize=(6, 6),
         axm = fig.figure.add_subplot(1,1,1)
         axc = None
     
-    map = Basemap(llcrnrlon=lon_limit[0], llcrnrlat=lat_limit[0],
+    m = Basemap(llcrnrlon=lon_limit[0], llcrnrlat=lat_limit[0],
                   urcrnrlon=lon_limit[1], urcrnrlat=lat_limit[1], 
                   projection='cyl', resolution='l', area_thresh=2500, ax=axm)
-    map.drawcoastlines(linewidth=0.5)
-    map.drawcountries(linewidth=0.5)
-    map.drawmeridians(np.arange(lon_limit[0]+10,lon_limit[1],10), linewidth=0.25, 
+    m.drawcoastlines(linewidth=0.5)
+    m.drawcountries(linewidth=0.5)
+    m.drawmeridians(np.arange(lon_limit[0]+10,lon_limit[1],10), linewidth=0.25, 
                       labels=[1,0,0,1], labelstyle='+/-')
-    map.drawparallels(np.arange(lat_limit[0]+10,lat_limit[1],10), linewidth=0.25, 
+    m.drawparallels(np.arange(lat_limit[0]+10,lat_limit[1],10), linewidth=0.25, 
                       labels=[1,0,0,1], labelstyle='+/-')
     if magfield:
         plot_magfield(axm, lon_limit[0], deltaH)
@@ -373,6 +373,150 @@ def plot_s4_map(S4, date, delta=30, figname=None, scale=(0, 1),
                 cm = cm*(1./(scale[1]-scale[0]))-(scale[0]/(scale[1]-scale[0]))
                 axm.scatter(x, y, c=cm, cmap=fig.cmap, norm=norm, s=20, edgecolor='none')
     
+    fig.show(watermark=False)
+
+def plot_tec_map(TEC, date, ptype, delta=60, figname=None, scale=(0, 80), 
+                prns=None, bad_prns=None, min_ele=30):
+    '''
+    #TODO
+    '''
+    dt1 = date
+    dt2 = date+delta*60
+    ###create figure
+    fig,axm,axc = plot_map('Total Electron Content (TEC)', figsize=(7,6), 
+                           lat_limit=(-60,40), lon_limit=(-120,-30),
+                           figname=figname, deltaH=20)
+    norm = fig.mpl.colors.Normalize(*scale)
+    ###colorbar    
+    cb = fig.mpl.colorbar.ColorbarBase(axc, cmap=fig.cmap, norm=norm, orientation='vertical')
+    cb.set_label('TECU', size=10)
+    cb.set_ticks(range(0, scale[1]+1, 10))
+    ###subtitle
+    axm.set_title('%s%30s%s - %s (UT)' % (date.strftime('%Y/%m/%d'), ' ', 
+                                          dt1.strftime('%H:%M'), 
+                                          dt2.strftime('%H:%M')), 
+                   size=11)
+    
+    if ptype=='measured':    
+        for data in TEC:
+            for prn in data.arcs:            
+                x,y,c = data.get_array(prn, ('lon', 'lat', 'eqTEC'), dt1, dt2, ('ele', min_ele))
+                axm.scatter(x, y, c=c, cmap=fig.cmap, norm=norm, s=5, edgecolor='none')
+    else:
+        lat = 60        
+        lon = 120        
+        mTEC = np.zeros((90,100))
+        iTEC = np.zeros((90,100))
+        iMAX = np.ones((90,100))*-99
+        #mTEC = np.ma.masked_where((mTEC==0), mTEC)
+        for data in TEC:
+            for prn in data.arcs:
+                for rec in data.get_records(prn, dt1, dt2):
+                    if rec[prn]['ele']<min_ele:
+                        continue
+                    x=int(rec[prn]['lon']+lon+0.5)
+                    y=int(rec[prn]['lat']+lat+0.5)
+                    mTEC[x,y] = mTEC[x,y]+rec[prn]['eqTEC']
+                    iTEC[x,y] = iTEC[x,y]+1
+                    if rec[prn]['eqTEC']>iMAX[x,y]: iMAX[x,y] = rec[prn]['eqTEC']
+        
+        mTEC = np.ma.masked_where((iTEC==0), mTEC)
+        Z = mTEC/iTEC
+        
+        x = np.arange(-5, 7, 1)
+        y = np.arange(5, -7, -1)
+        
+        x, y = np.meshgrid(x, y)
+        
+        z = Z[70:82,40:52]
+        ave = np.nanmean(z)
+        std = np.nanstd(z)
+        
+        p = [z, z*x, z*y, z*x**2, z*x*y, z*y**2, z*x**3, z*y*x**2, z*x*y**2, z*y**3]
+        p = [np.nansum(a) for a in p]
+        print p
+        print ave
+        print std
+        
+                
+        #P = (1+x+y+x**2+y**2+x*y+x**2*y+x*y**2+x**3+y**3)*t        
+        
+        X = np.arange(-lon, -29)
+        Y = np.arange(-lat, 41)        
+        X, Y = np.meshgrid(X, Y)        
+        axm.pcolor(X, Y, Z.T, cmap=fig.cmap, norm=norm)
+        
+    fig.show(watermark=False)
+
+def plot_bubbles_map(bub, date=None, delta=60, figname=None, prns=None, codes=None,
+                     scale=(0, 20)):
+    '''
+    '''
+    if date is None:
+        date = bub[0].epoch.date()
+    dt1 = date
+    dt2 = date+delta*60-1
+    if codes is not None:
+        codes = [code for code in codes if code in bub.codes]
+    else:
+        codes = bub.codes
+    if prns is not None:
+        prns = [prn for prn in prns if prn in bub.prns]
+    else:
+        prns = bub.prns
+    ###create figure
+    fig,axm,axc = plot_map('TEC Depletions', figsize=(7,6), 
+                           lat_limit=(-60,40), lon_limit=(-120,-30),
+                           figname=figname, deltaH=20)
+    norm = fig.mpl.colors.Normalize(*scale)
+    ###colorbar    
+    cb = fig.mpl.colorbar.ColorbarBase(axc, cmap=fig.cmap, norm=norm, orientation='vertical')
+    cb.set_label('DEP', size=10)
+    cb.set_ticks(range(0, scale[1]+1, 10))    
+    ###Plot Data
+    segments = []
+    dTEC = []
+    cnt = 0
+    for rec in bub:
+        if rec.prn not in prns:
+            continue
+        if rec.code not in codes:
+            continue
+        if dt1>rec.epoch or rec.epoch>dt2:
+            continue        
+        lat1 = rec['lat'][0]
+        lat2 = rec['lat'][-1]
+        lon1 = rec['lon'][0]
+        lon2 = rec['lon'][-1]
+        if gps.GTODDBL(lat1, lon1, lat2, lon2, 350)>650:            
+            continue
+        dtec = abs(min(rec['dTEC']))
+        segments.append(((lon1, lat1), (lon2, lat2)))
+        dTEC.append(dtec)
+        cnt += 1 
+    
+    LC = fig.LC(segments, cmap=fig.cmap, norm=norm)
+    LC.set_linewidth(3)
+    
+    LC.set_array(np.array(dTEC))
+    axm.add_collection(LC)    
+    axm.set_title('%s     %s - %s (UT)    #bubbles=%s' % (dt1.strftime('%Y/%m/%d'), 
+                                                          dt1.strftime('%H:%M'), 
+                                                          dt2.strftime('%H:%M'), 
+                                                          cnt),
+                  size=11)
+    
+    if len(codes)==len(bub.codes):
+        chcodes = 'all'
+    else:
+        chcodes = ','.join(codes)
+    if len(prns)==len(bub.prns):
+        chprns = 'all'
+    else:
+        chprns = ','.join(prns)
+    fig.text(0.82, 0.92,
+             "Stations:%s\nPRN's:%s" % (chcodes, chprns),
+             size=8, ha='left')
     fig.show(watermark=False)
     
 def plot_data_vars(gdo, X, Y, figname=None, localtime=False, prns=None, min_ele=30, 
@@ -597,8 +741,12 @@ def plot_mag(mdo, figname=None, station=None, figure=None, scale=None):
     else:
         max_value = 0
     
-    if not scale: scale = (int(max_value*10/10))+(int(0.2*(max_value*10/10)))
-    else: scale = int(scale)
+    if not scale: 
+        scale = int(max_value+20)/10*10
+        if scale<200:
+            scale = 200
+    else: 
+        scale = int(scale)
 
     [y1max, y1min, y2max, y2min] = [scale, -scale, scale/10., -scale/10.]
     
@@ -624,9 +772,9 @@ def plot_mag(mdo, figname=None, station=None, figure=None, scale=None):
     fig.set_xticks(size=8)
     fig.set_yticks(size=8)
     fig.set_labels()
-    fig.text(0.4,0.96,'H---', size=10, color = 'b', ha='center', va='bottom')
-    fig.text(0.5,0.96,'Z---', size=10, color = 'g', ha='center', va='bottom')
-    fig.text(0.6,0.96,'D---', size=10, color = 'r', ha='center', va='bottom')
+    fig.suptitle('H---', x=0.4, size=10, color = 'b', ha='center', va='bottom')
+    fig.suptitle('Z---', x=0.5, size=10, color = 'g', ha='center', va='bottom')
+    fig.suptitle('D---', x=0.6, size=10, color = 'r', ha='center', va='bottom')
     
     if station:
         ax.ax.text(0.5, y1max-0.2*y1max, station['fullname']+msg, size=8, ha='left', va='top')
@@ -649,7 +797,7 @@ def plot_s4(sdo, plot_type='0', figname=None, prns=None,
     if not prns:
         prns = [prn for prn in sdo.prns]
         prns.sort()
-    
+
     if localtime and 'longitude' in sdo.station:
         timezone = timedelta((sdo.station['longitude']/15)/24.)
     else:
@@ -761,4 +909,3 @@ def plot_s4(sdo, plot_type='0', figname=None, prns=None,
                                                       sdo.date))
 
     return fig.show()
-    
