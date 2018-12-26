@@ -2817,7 +2817,7 @@ class SatBias(dict):
     dictionary by prn, bias values.
     '''
 
-    ftp_add = 'ftp.unibe.ch'
+    ftp_add = 'ftp.aiub.unibe.ch'
 
     def __init__(self, date, obscodes=['C1'], path=None, factor=-TECUns):
 
@@ -2858,7 +2858,7 @@ class SatBias(dict):
         '''
         Try to donwload bias files from unibe
         '''
-        ftp_path = '/aiub/CODE/'
+        ftp_path = '/CODE/'
         actual = GPSDateTime().year == self.date.year and \
                  GPSDateTime().month == self.date.month
         if not actual:
